@@ -1,0 +1,89 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: payment-processing-engine
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/paymentdb
+    username: ${DB_USERNAME:payment_user}
+    password: ${DB_PASSWORD:payment_pass}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 5
+
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                      # Wait for all replicas — no data loss
+      retries: 3
+      properties:
+        enable.idempotence: true     # Kafka producer idempotence
+        max.in.flight.requests.per.connection: 1
+    consumer:
+      group-id: payment-settlement-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.paymentengine.model.dto"
+      enable-auto-commit: false      # Manual commit for exactly-once guarantees
+
+# Application-specific config
+app:
+  kafka:
+    topics:
+      payment-initiated: payment.initiated
+      payment-settlement: payment.settlement
+      payment-dlq: payment.dlq           # Dead Letter Queue
+  redis:
+    idempotency:
+      ttl-minutes: 1440                  # 24 hours
+  jwt:
+    secret: ${JWT_SECRET:your-256-bit-secret-key-here-change-in-production}
+    expiration-ms: 86400000
+  reconciliation:
+    cron: "0 0 1 * * *"                  # Run daily at 1 AM
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.paymentengine: INFO
+    org.springframework.kafka: WARN
